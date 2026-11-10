@@ -35,10 +35,36 @@ CORINE_G = {
 }
 
 
-def sample_dem(dem: Optional[QgsRasterLayer], x: float, y: float) -> Optional[float]:
+def _transform(src_crs, dst_crs):
+    """QgsCoordinateTransform albo None, gdy układy są takie same / nieokreślone."""
+    from qgis.core import QgsCoordinateTransform
+    if src_crs is None or dst_crs is None or not src_crs.isValid() or not dst_crs.isValid():
+        return None
+    if src_crs == dst_crs:
+        return None
+    return QgsCoordinateTransform(src_crs, dst_crs, QgsProject.instance())
+
+
+def require_metric_crs(layer: QgsVectorLayer, what: str) -> None:
+    """Obliczenia hałasu wymagają układu w metrach (np. EPSG:2180)."""
+    crs = layer.crs()
+    if not crs.isValid():
+        raise ValueError(f"Warstwa {what} „{layer.name()}” nie ma określonego układu współrzędnych")
+    if crs.isGeographic():
+        raise ValueError(
+            f"Warstwa {what} „{layer.name()}” jest w układzie geograficznym ({crs.authid()}, stopnie). "
+            f"Zapisz ją w układzie metrycznym, np. EPSG:2180")
+
+
+def sample_dem(dem: Optional[QgsRasterLayer], x: float, y: float, src_crs=None) -> Optional[float]:
+    """Rzędna z NMT; (x, y) w układzie src_crs – przeliczane do układu rastra."""
     if dem is None or not dem.isValid():
         return None
     with contextlib.suppress(Exception):
+        tr = _transform(src_crs, dem.crs())
+        if tr is not None:
+            p = tr.transform(QgsPointXY(x, y))
+            x, y = p.x(), p.y()
         val, ok = dem.dataProvider().sample(QgsPointXY(x, y), 1)
         if ok and val is not None and val == val:
             return float(val)
@@ -144,7 +170,7 @@ def build_sources(
             hub_height=hh,
             model_name=data["model_label"],
             lwa=data["lwa"],
-            z_ground=sample_dem(dem, pt.x(), pt.y()),
+            z_ground=sample_dem(dem, pt.x(), pt.y(), layer.crs()),
             lw_octave=data["octaves"],
             name=_feature_label(layer, feat),
             wtg_path=wtg_path,
@@ -165,12 +191,16 @@ def build_receivers(
     limit_field: Optional[str] = None,
     limit_dba: Optional[float] = None,
     dem: Optional[QgsRasterLayer] = None,
+    target_crs=None,
 ) -> List[ReceiverPoint]:
     """
     limit_field – opcjonalne pole atrybutowe z limitem per receptor
     limit_dba   – globalny limit (z GUI), używany gdy brak/nieczytelne pole
+    target_crs  – układ obliczeń (warstwy turbin); receptory z innego układu są przeliczane
     """
     out: List[ReceiverPoint] = []
+    tr = _transform(layer.crs(), target_crs)
+    calc_crs = target_crs if tr is not None else layer.crs()
     for feat in layer.getFeatures():
         geom = feat.geometry()
         if geom is None or geom.isEmpty():
@@ -179,6 +209,8 @@ def build_receivers(
             pt = geom.asPoint()
         else:
             pt = geom.centroid().asPoint()
+        if tr is not None:
+            pt = tr.transform(pt)
 
         # nazwy raportowe: R1, R2, … (kolejność obiektów w warstwie)
         name = f"R{len(out) + 1}"
@@ -193,7 +225,7 @@ def build_receivers(
             id=feat.id(),
             x=pt.x(), y=pt.y(),
             receiver_height=receiver_height,
-            z_ground=sample_dem(dem, pt.x(), pt.y()),
+            z_ground=sample_dem(dem, pt.x(), pt.y(), calc_crs),
             name=name,
             limit_dba=limit,
         ))
@@ -207,10 +239,13 @@ def estimate_g_corine(
     code_field: str = "Code_18",
     max_pairs: int = 25,
     fallback: float = 0.5,
+    points_crs=None,
 ) -> float:
-    """Średnie G z CORINE wzdłuż ścieżek (próbka par źródło–receptor); fallback gdy brak danych."""
+    """Średnie G z CORINE wzdłuż ścieżek (próbka par źródło–receptor); fallback gdy brak danych.
+    points_crs – układ współrzędnych źródeł/receptorów (przeliczany do układu warstwy CORINE)."""
     if landuse is None or not landuse.isValid():
         return fallback
+    tr_lu = _transform(points_crs, landuse.crs())
     gs = []
     n = 0
     for src in sources:
@@ -221,7 +256,10 @@ def estimate_g_corine(
                 t = i / 4.0
                 x = src.x + t * (rec.x - src.x)
                 y = src.y + t * (rec.y - src.y)
-                pt = QgsGeometry.fromPointXY(QgsPointXY(x, y))
+                pxy = QgsPointXY(x, y)
+                if tr_lu is not None:
+                    pxy = tr_lu.transform(pxy)
+                pt = QgsGeometry.fromPointXY(pxy)
                 req = QgsFeatureRequest().setFilterRect(pt.boundingBox())
                 for feat in landuse.getFeatures(req):
                     if feat.geometry().contains(pt):
@@ -288,10 +326,14 @@ def apply_noise_grid_and_isolines(
     output_dir: Optional[str] = None,
     write_raster: bool = True,
     write_isolines: bool = True,
+    stamp: Optional[str] = None,
+    log=None,
 ) -> tuple:
     """
     Z NoiseGrid tworzy raster i/lub izolinie.
-    Pliki zapisuje w output_dir (domyślnie temp).
+    Pliki zapisuje w output_dir (domyślnie temp) z jednym znacznikiem czasu w nazwie
+    (noise_map_<znacznik>.tif, isolines_<znacznik>.shp) – kolejny przebieg nie nadpisuje
+    plików otwartych w QGIS.
     Zwraca (raster_layer, isoline_layer, isolines_geojson_path).
     """
     import os
@@ -321,13 +363,18 @@ def apply_noise_grid_and_isolines(
     else:
         outdir = tempfile.mkdtemp(prefix="windlab_noise_")
 
-    tif_path = os.path.join(outdir, "noise_map.tif")
+    if not stamp:
+        from WindLab.core.paths import run_stamp
+        stamp = run_stamp(outdir)
+    tif_path = os.path.join(outdir, f"noise_map_{stamp}.tif")
     raster_layer = None
     iso_layer = None
     geojson_path = None
 
     driver = gdal.GetDriverByName("GTiff")
     ds = driver.Create(tif_path, grid.ncols, grid.nrows, 1, gdal.GDT_Float32)
+    if ds is None:
+        raise RuntimeError(f"Nie można zapisać rastra hałasu: {tif_path} ({gdal.GetLastErrorMsg()})")
     gt = (grid.xmin, grid.resolution_m, 0.0, grid.ymax, 0.0, -grid.resolution_m)
     ds.SetGeoTransform(gt)
     srs = osr.SpatialReference()
@@ -349,13 +396,15 @@ def apply_noise_grid_and_isolines(
     levels = list(grid.iso_levels or [35, 40, 45, 50, 55])
     if write_isolines:
         try:
-            shp_path = os.path.join(outdir, "isolines.shp")
+            shp_path = os.path.join(outdir, f"isolines_{stamp}.shp")
             src_ds = gdal.Open(tif_path)
             src_band = src_ds.GetRasterBand(1)
             drv = ogr.GetDriverByName("ESRI Shapefile")
             if os.path.exists(shp_path):
                 drv.DeleteDataSource(shp_path)
             dst_ds = drv.CreateDataSource(shp_path)
+            if dst_ds is None:
+                raise RuntimeError(f"nie można utworzyć {shp_path} ({gdal.GetLastErrorMsg()})")
             dst_layer = dst_ds.CreateLayer("isolines", srs, ogr.wkbLineString)
             field_def = ogr.FieldDefn("level", ogr.OFTReal)
             dst_layer.CreateField(field_def)
@@ -378,7 +427,7 @@ def apply_noise_grid_and_isolines(
             dst_ds = None
             src_ds = None
 
-            geojson_path = os.path.join(outdir, "isolines_for_report.json")
+            geojson_path = os.path.join(outdir, f"isolines_for_report_{stamp}.json")
             with open(geojson_path, "w", encoding="utf-8") as f:
                 json.dump({"crs": crs_authid, "features": features}, f)
 
@@ -386,12 +435,16 @@ def apply_noise_grid_and_isolines(
             if vl.isValid():
                 QgsProject.instance().addMapLayer(vl)
                 iso_layer = vl
-        except Exception:
+        except Exception as e:
             iso_layer = None
             geojson_path = None
+            if log:
+                log(f"✗  Izolinie nie zostały zapisane: {e}")
 
-    # jeśli nie chcemy rastra na dysku na stałe poza report – i tak zostaje tif
-    if not write_raster and not write_isolines:
-        pass
+    if not write_raster:
+        # raster był tylko pośredni (źródło izolinii) – nie zostawiamy go w katalogu wyników
+        for extra in ("", ".aux.xml"):
+            with contextlib.suppress(OSError):
+                os.remove(tif_path + extra)
 
     return raster_layer, iso_layer, geojson_path

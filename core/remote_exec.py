@@ -28,6 +28,7 @@ import zipfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from .paths import latest
 from .worker_registry import WORKERS, OUT_KEYS, count_turbines, params_from_argv, worker_id
 import contextlib
 
@@ -315,11 +316,13 @@ def _build(cmd: List[str]) -> Tuple[bytes, _Package]:
         i += 1
 
     # pliki wyników, które worker czyta z katalogu wyjściowego po nazwie (np. raport kabli)
+    # (najnowszy <nazwa>_<znacznik czasu>.<ext> albo starszy <nazwa>.<ext>)
     for name in spec.get("out_inputs", []):
+        base, ext = os.path.splitext(name)
         for root, _k in list(pkg.out_roots):
-            f = root / name
-            if f.is_file():
-                pkg.map_input(str(f))
+            f = latest(str(root), base, ext)
+            if f:
+                pkg.map_input(f)
 
     manifest = {"worker": script, "proto": 2, "argv": argv, "templated": pkg.templated,
                 "outputs": [k for _, k in pkg.out_roots]}

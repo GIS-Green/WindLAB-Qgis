@@ -408,12 +408,14 @@ class NCAnalyzerDialog(QDialog):
             or Path(data_dir).name
             or "projekt"
         )
-        path = os.path.join(out_root, report_filename("ZASOBY_WIATRU", proj))
+        path = os.path.join(out_root, report_filename("ZASOBY_WIATRU", proj, out_dir=out_root))
 
         plots_dir = self.edit_plotsdir.text().strip() or None
         if not plots_dir:
             plots_dir = os.path.join(out_root, "wykresy_nc")
 
+        from WindLab.core.paths import stamp_of as _stamp_of
+        plots_dir = os.path.join(plots_dir, "raport_" + (_stamp_of(path) or "wykresy"))
         params = {
             "data_dir": data_dir,
             "output_pdf": path,

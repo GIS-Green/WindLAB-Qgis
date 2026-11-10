@@ -763,7 +763,9 @@ class WakeMapDialog(QDialog):
         if str(proj).lower() in ("turbines", "wtg", "turbiny", ""):
             proj = os.environ.get("WINDLAB_PROJECT_NAME") or "projekt"
         self._last_result["project_name"] = proj
-        pdf_path = os.path.join(out_dir, report_filename("WAKE", proj))
+        pdf_path = os.path.join(out_dir, report_filename("WAKE", proj, out_dir=out_dir))
+        from WindLab.core.paths import stamp_of as _stamp_of
+        plots_dir = os.path.join(out_dir, "wykresy_wake_" + (_stamp_of(pdf_path) or "raport"))
 
         # Nazwa projektu z WindLab (nie z warstwy turbin!)
         data = dict(result)
@@ -784,7 +786,7 @@ class WakeMapDialog(QDialog):
                 env.pop("PYTHONHOME", None)
                 env.pop("PYTHONPATH", None)
                 r = rx.run(
-                    [PYTHON_EXE, report_script, tmp_json, pdf_path, out_dir],
+                    [PYTHON_EXE, report_script, tmp_json, pdf_path, plots_dir],
                     capture_output=True, env=env, timeout=300,
                 )
             finally:

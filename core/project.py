@@ -14,7 +14,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 REQUIRED_SUBDIRS = [
-    "WTG",
     "Output",
     "Data",
     "Data/NC",
@@ -52,7 +51,12 @@ class WindLabProject:
 
     @property
     def turbine_shp(self) -> Path:
+        """Warstwa turbin wskazana przy tworzeniu projektu (plik źródłowy, bez kopii).
+        Starsze projekty mają tu kopię WTG/turbines.shp – nadal działają."""
         rel = self._data.get("turbine_shp", "WTG/turbines.shp")
+        p = Path(rel)
+        if p.is_absolute():
+            return p
         return (self.project_dir / rel).resolve()
 
     @property
@@ -115,21 +119,37 @@ class WindLabProject:
         return f"<WindLabProject {self.name!r} @ {self.project_dir}>"
 
 
+_SHP_PARTS = (".shp", ".shx", ".dbf", ".prj", ".cpg", ".qix", ".sbn", ".sbx", ".qmd", ".qpj")
+
+
 def _copy_shp(src: Path, dst_dir: Path, new_name: str = "turbines") -> Path:
+    """Kopia shapefile pod nową nazwą (tylko składowe TEGO pliku: nazwa.shp/.shx/.dbf/…,
+    a nie wszystko pasujące do „nazwa.*”, np. sąsiednie nazwa.v2.shp).
+    Tworzenie projektu z tego nie korzysta – projekt wskazuje plik źródłowy."""
     src = Path(src)
     if not src.is_file():
         raise FileNotFoundError(f"Brak pliku SHP turbin: {src}")
     dst_dir.mkdir(parents=True, exist_ok=True)
-    stem = src.stem
-    parent = src.parent
     copied = []
-    for f in parent.glob(stem + ".*"):
-        target = dst_dir / f"{new_name}{f.suffix}"
+    for f in src.parent.iterdir():
+        if not f.is_file() or f.stem.lower() != src.stem.lower() or f.suffix.lower() not in _SHP_PARTS:
+            continue
+        target = dst_dir / f"{new_name}{f.suffix.lower()}"
         shutil.copy2(f, target)
         copied.append(target.name)
     if not copied:
         raise FileNotFoundError(f"Nie skopiowano żadnych plików z: {src}")
     return dst_dir / f"{new_name}.shp"
+
+
+def _turbine_ref(turbine_shp: Path, project_root: Path) -> str:
+    """Zapis ścieżki warstwy turbin w pliku projektu: względna, gdy plik leży w katalogu
+    projektu (projekt da się przenieść), inaczej bezwzględna."""
+    src = Path(turbine_shp).resolve()
+    try:
+        return src.relative_to(project_root).as_posix()
+    except ValueError:
+        return str(src)
 
 
 def create_project(
@@ -152,8 +172,11 @@ def create_project(
     for sub in REQUIRED_SUBDIRS:
         (project_root / sub).mkdir(parents=True, exist_ok=True)
 
-    wtg_dir = project_root / "WTG"
-    _copy_shp(Path(turbine_shp), wtg_dir, new_name="turbines")
+    # Warstwa turbin NIE jest kopiowana – projekt wskazuje plik wybrany przez użytkownika
+    # (jedno źródło danych: zmiany w warstwie od razu widzą wszystkie moduły).
+    if not Path(turbine_shp).is_file():
+        raise FileNotFoundError(f"Brak pliku warstwy turbin: {turbine_shp}")
+    turbine_ref = _turbine_ref(Path(turbine_shp), project_root)
 
     out_rel = "Output"
     nc_rel = "Data/NC"
@@ -180,7 +203,7 @@ def create_project(
     data = {
         "project_name": project_name,
         "created": datetime.now().strftime("%Y-%m-%d"),
-        "turbine_shp": "WTG/turbines.shp",
+        "turbine_shp": turbine_ref,
         "turbine_id_column": id_column,
         "output_dir": out_rel,
         "data_nc_dir": nc_rel,

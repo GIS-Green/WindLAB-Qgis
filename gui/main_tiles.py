@@ -301,7 +301,7 @@ class CreateProjectDialog(QDialog):
         t.setStyleSheet(f"color: {C_INK}; background: transparent;")
         htx.addWidget(t)
 
-        s = QLabel("Plik projektu: NazwaProjektu.json · SHP → folder WTG")
+        s = QLabel("Plik projektu: NazwaProjektu.json · warstwa turbin: wskazany plik SHP (bez kopii)")
         s.setFont(QFont("Segoe UI", 10))
         s.setStyleSheet(f"color: {C_MUTED}; background: transparent;")
         htx.addWidget(s)
@@ -531,12 +531,16 @@ class CreateProjectDialog(QDialog):
                 for lyr in QgsProject.instance().mapLayers().values():
                     if lyr.name() == shp and isinstance(lyr, QgsVectorLayer):
                         src = lyr.source().split("|")[0]
-                        if Path(src).is_file():
+                        if Path(src).is_file() and Path(src).suffix.lower() == ".shp":
+                            # plik SHP na dysku – projekt wskazuje go bezpośrednio (bez kopii)
                             shp_path = Path(src)
                         else:
-                            # warstwa w pamięci – zapisz tymczasowy SHP
-                            import tempfile
-                            tmp = Path(tempfile.mkdtemp()) / "turbines_src.shp"
+                            # warstwa w pamięci albo w innym formacie (np. GeoPackage) nie ma
+                            # własnego pliku SHP – zapisz ją raz w katalogu projektu
+                            import re as _re
+                            safe = _re.sub(r"[^\w\-]+", "_", name).strip("_") or "projekt"
+                            proj_root.mkdir(parents=True, exist_ok=True)
+                            tmp = proj_root / f"{safe}_turbiny.shp"
                             from qgis.core import QgsVectorFileWriter
                             QgsVectorFileWriter.writeAsVectorFormat(
                                 lyr, str(tmp), "UTF-8", lyr.crs(), "ESRI Shapefile")

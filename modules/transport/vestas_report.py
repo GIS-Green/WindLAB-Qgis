@@ -36,9 +36,9 @@ def render_route_map(layers, extent, out_png, size=(1600, 1000)):
     return out_png if os.path.isfile(out_png) else None
 
 
-def collect_report_data(swept, terrain, settings, road_layer, out_dir, dem_checks=None):
-    """Dane do raportu (dict serializowalny do JSON) + mapy łuków w out_dir/_transport_plots."""
-    plots = os.path.join(out_dir, "_transport_plots")
+def collect_report_data(swept, terrain, settings, road_layer, out_dir, dem_checks=None, stamp=""):
+    """Dane do raportu (dict serializowalny do JSON) + mapy łuków w out_dir/wykresy_transportu_<znacznik>."""
+    plots = os.path.join(out_dir, "wykresy_transportu_" + stamp if stamp else "_transport_plots")
     os.makedirs(plots, exist_ok=True)
     routes = []
     for r in swept.get("results") or []:

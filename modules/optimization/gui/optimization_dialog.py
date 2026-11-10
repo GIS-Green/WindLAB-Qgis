@@ -50,8 +50,15 @@ def _rule_extra(r: dict) -> str:
 
 
 def _find_in_dir(directory: str, names) -> str:
+    """Najnowszy plik wyniku: <nazwa>_<znacznik czasu>.<ext> albo starszy <nazwa>.<ext>."""
     if not directory or not os.path.isdir(directory):
         return ""
+    from WindLab.core.paths import latest
+    for n in names:
+        base, ext = os.path.splitext(n)
+        p = latest(directory, base, ext)
+        if p:
+            return p
     for n in names:
         p = os.path.join(directory, n)
         if os.path.isfile(p):
@@ -176,7 +183,7 @@ class OptimizationDialog(QDialog):
         fl = QFormLayout(gb)
 
         self.ed_shadow = QLineEdit()
-        self.ed_shadow.setPlaceholderText("shadow_optimization_calendars.json")
+        self.ed_shadow.setPlaceholderText("shadow_optimization_calendars_<data>.json")
         row = QHBoxLayout()
         row.addWidget(self.ed_shadow)
         b = browse_button("Wskaż plik JSON cienia")
@@ -639,9 +646,8 @@ self, edit: QLineEdit, filt: str):
 
         # upewnij się, że JSON wyniku leży na dysku
         if not json_path or not os.path.isfile(json_path):
-            from datetime import datetime as _dt
-            stamp = _dt.now().strftime("%Y-%m-%d")
-            json_path = os.path.join(out_dir, f"optimization_results_{stamp}.json")
+            from WindLab.core.paths import run_stamp as _run_stamp
+            json_path = os.path.join(out_dir, f"optimization_results_{_run_stamp(out_dir)}.json")
             try:
                 with open(json_path, "w", encoding="utf-8") as f:
                     json.dump(data, f, ensure_ascii=False, indent=2)
@@ -656,8 +662,9 @@ self, edit: QLineEdit, filt: str):
         from datetime import datetime as _dt
         stamp = _dt.now().strftime("%Y-%m-%d")
         proj = os.environ.get("WINDLAB_PROJECT_NAME") or "projekt"
-        pdf_path = os.path.join(out_dir, report_filename("OPTYMALIZACJA", proj))
-        plots_dir = os.path.join(out_dir, "_opt_plots")
+        pdf_path = os.path.join(out_dir, report_filename("OPTYMALIZACJA", proj, out_dir=out_dir))
+        from WindLab.core.paths import stamp_of as _stamp_of
+        plots_dir = os.path.join(out_dir, "wykresy_optymalizacji_" + (_stamp_of(pdf_path) or "raport"))
         try:
             os.makedirs(plots_dir, exist_ok=True)
         except Exception:

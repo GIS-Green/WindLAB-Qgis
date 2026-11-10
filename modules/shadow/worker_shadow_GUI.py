@@ -244,7 +244,7 @@ class ShadowDialog(QDialog):
         )
         self.chk_opt_calendars.setChecked(True)
         self.chk_opt_calendars.setToolTip(
-            "Zapisuje shadow_optimization_calendars.json z kalendarzami "
+            "Zapisuje shadow_optimization_calendars_<data>.json z kalendarzami "
             "cień×turbina×receptor (wymagane przez moduł optymalizacji strat)."
         )
         go_opt.addWidget(self.chk_opt_calendars)
@@ -526,6 +526,11 @@ class ShadowDialog(QDialog):
         self.log_box.append(f"Najgorszy receptor: {result.get('worst_receptor')}")
         self.log_box.append(f">30 h: {result.get('n_exceed_30h')}   >8 h: {result.get('n_exceed_8h')}")
         self.log_box.append(f"CSV receptorów: {result.get('csv_path', '')}")
+        warns = result.get("warnings") or []
+        for w in warns:
+            self.log_box.append(f"⚠  {w}")
+        if warns:
+            QMessageBox.warning(self, "Migotanie cienia – uwagi", "\n\n".join(warns)[:1500])
 
         # Punkty receptorów (zawsze, jeśli worker zapisał)
         p = result.get("shp_receptors_path") or result.get("shp_path")
@@ -580,7 +585,9 @@ class ShadowDialog(QDialog):
         os.makedirs(out_dir, exist_ok=True)
         mode = result.get("mode", "worst_case")
         suffix = "real" if mode == "real_case" else "worst"
-        shp_path = os.path.join(out_dir, f"shadow_flicker_receptors_{suffix}.shp")
+        from WindLab.core.paths import run_stamp
+        stamp = result.get("stamp") or run_stamp(out_dir)
+        shp_path = os.path.join(out_dir, f"shadow_flicker_receptors_{suffix}_{stamp}.shp")
 
         fields = QgsFields()
         fields.append(QgsField("name", QVariant.String))
@@ -645,7 +652,10 @@ class ShadowDialog(QDialog):
         fd, json_path = tempfile.mkstemp(suffix=".json", prefix="shadow_", text=True)
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(self._last_result, f, ensure_ascii=False, indent=2)
-        pdf_path = os.path.join(out_dir, report_filename("MIGOTANIE_CIENIA", proj))
+        pdf_path = os.path.join(out_dir, report_filename("MIGOTANIE_CIENIA", proj, out_dir=out_dir))
+        from WindLab.core.paths import stamp_of
+        plots_dir = os.path.join(out_dir, "wykresy_cienia_" + (stamp_of(pdf_path) or "raport"))
+        os.makedirs(plots_dir, exist_ok=True)
         self.log_box.append("Generuję raport PDF...")
         self.btn_report.setEnabled(False)
         try:
@@ -653,7 +663,7 @@ class ShadowDialog(QDialog):
             env.pop("PYTHONHOME", None)
             env.pop("PYTHONPATH", None)
             proc = rx.run(
-                [PYTHON_EXE, REPORT_GEN, json_path, pdf_path, out_dir],
+                [PYTHON_EXE, REPORT_GEN, json_path, pdf_path, plots_dir],
                 capture_output=True, text=True, env=env, timeout=300,
             )
             if proc.stdout:

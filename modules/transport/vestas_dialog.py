@@ -372,12 +372,14 @@ class VestasDialog(QDialog):
         feedback = DialogFeedback(self.progress, self.log)
         feedback.pushInfo("Raport PDF: zbieranie danych i mapy łuków…")
         try:
+            from WindLab.core.paths import run_stamp
+            stamp = run_stamp(out_dir)
             data = collect_report_data(last["swept"], last["terrain"], last["settings"], last["road"],
-                                       out_dir, last.get("dem_checks"))
-            data_path = os.path.join(out_dir, "transport_report_data.json")
+                                       out_dir, last.get("dem_checks"), stamp=stamp)
+            data_path = os.path.join(out_dir, f"transport_report_data_{stamp}.json")
             with open(data_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=1)
-            pdf = os.path.join(out_dir, report_filename("TRANSPORT", data.get("project") or "projekt"))
+            pdf = os.path.join(out_dir, report_filename("TRANSPORT", data.get("project") or "projekt", out_dir=out_dir))
             worker = os.path.join(os.path.dirname(os.path.abspath(__file__)), "worker_transport_report.py")
             env = os.environ.copy()
             env.pop("PYTHONHOME", None)

@@ -40,10 +40,12 @@ from ..engine import (
 )
 from .qgis_bridge import (
     build_sources, build_receivers, estimate_g_corine, apply_results,
-    apply_noise_grid_and_isolines, fill_z_gugik,
+    apply_noise_grid_and_isolines, fill_z_gugik, require_metric_crs,
 )
 
-from WindLab.core.paths import find_external_python, models_wtg_dir, report_filename, windlab_root
+from WindLab.core.paths import (
+    find_external_python, models_wtg_dir, report_filename, windlab_root, run_stamp, stamp_of,
+)
 from WindLab.core.ui import (
     TurbinePicker, browse_button, hint_label, log_view, set_role, style_module_dialog,
     ElevationSourceCombo,
@@ -340,7 +342,7 @@ class NoiseDialog(QDialog):
         self.chk_for_opt = QCheckBox("Oblicz hałas na potrzeby optymalizacji")
         self.chk_for_opt.setChecked(False)
         self.chk_for_opt.setToolTip(
-            "Zapisuje noise_paths.json: tłumienie każdej ścieżki WTG → receptor w pasmach oktawowych\n"
+            "Zapisuje noise_paths_<data>.json: tłumienie każdej ścieżki WTG → receptor w pasmach oktawowych\n"
             "oraz opis turbin. Moduł optymalizacji liczy z tego poziomy dla każdego trybu pracy\n"
             "i prędkości wiatru (dane trybów bierze z pliku .wtg).")
         fl_opt.addRow(self.chk_for_opt)
@@ -493,6 +495,17 @@ class NoiseDialog(QDialog):
         corine = self.cmb_corine.currentLayer()
         corine = corine if isinstance(corine, QgsVectorLayer) else None
 
+        # układ obliczeń = układ warstwy turbin (musi być w metrach); receptory, NMT i CORINE
+        # z innych układów są przeliczane
+        require_metric_crs(turb, "turbin")
+        calc_crs = turb.crs()
+        if rec.crs().isValid() and rec.crs() != calc_crs:
+            self._log(f"Receptory w układzie {rec.crs().authid()} – przeliczone do {calc_crs.authid()} (układ turbin)")
+        elif not rec.crs().isValid():
+            self._log("⚠  Warstwa receptorów nie ma układu współrzędnych – przyjęto układ turbin")
+        if dem is not None and not dem.crs().isValid():
+            self._log("⚠  NMT nie ma określonego układu współrzędnych – przyjęto układ turbin")
+
         rule = self.cmb_rule.currentData()
         ws_ref = self.cmb_ref.currentData()
         self._log(f"Turbina: {model_name}")
@@ -506,15 +519,22 @@ class NoiseDialog(QDialog):
         if not sources:
             raise ValueError("Brak punktów turbin")
         rx.check_turbine_limit(len(sources))      # wersja demo – przed GUGiK i wysyłką
+        # odniesienie prędkości faktycznie użyte (gdy krzywa nie ma wybranego, silnik bierze drugie)
+        ws_ref = sources[0].noise_ref or ws_ref
         receivers = build_receivers(
             rec, receiver_height=self.spn_rh.value(),
-            limit_dba=self.spn_lim.value(), dem=dem,
+            limit_dba=self.spn_lim.value(), dem=dem, target_crs=calc_crs,
         )
         if not receivers:
             raise ValueError("Brak receptorów")
         if self.cmb_elev.is_gugik():
-            fill_z_gugik(sources, turb.crs().authid(), log=self._log)
-            fill_z_gugik(receivers, rec.crs().authid(), log=self._log)
+            fill_z_gugik(sources, calc_crs.authid(), log=self._log)
+            fill_z_gugik(receivers, calc_crs.authid(), log=self._log)
+        elif dem is not None:
+            n_miss = sum(1 for p in list(sources) + list(receivers) if p.z_ground is None)
+            if n_miss:
+                self._log(f"⚠  NMT nie obejmuje {n_miss} z {len(sources) + len(receivers)} punktów – "
+                          f"dla ścieżek z takim punktem przyjęto wspólny poziom terenu")
         if len(receivers) > 2000:
             self._log(
                 f"⚠  UWAGA: {len(receivers)} receptorów – wygląda na warstwę CORINE/gęstą, "
@@ -539,7 +559,7 @@ class NoiseDialog(QDialog):
             self._log("G z CORINE – wyznaczy serwer obliczeń")
         elif corine is not None and self.chk_corine.isChecked():
             try:
-                g = estimate_g_corine(corine, sources, receivers, fallback=g)
+                g = estimate_g_corine(corine, sources, receivers, fallback=g, points_crs=calc_crs)
                 g_source = "z CORINE"
                 self._log(f"G z CORINE ≈ {g:.2f}")
             except Exception as e:
@@ -549,6 +569,7 @@ class NoiseDialog(QDialog):
 
         out_dir = self.ed_outdir.text().strip() or OUTPUT_DIR
         os.makedirs(out_dir, exist_ok=True)
+        stamp = run_stamp(out_dir)      # wspólny znacznik czasu plików tego przebiegu
 
         grid_cfg = None
         want_grid = self.chk_iso.isChecked() or self.chk_raster.isChecked()
@@ -592,7 +613,10 @@ class NoiseDialog(QDialog):
             result = run(cfg)
         for m in result.messages:
             self._log(m)
-        crs = rec.crs().authid() or "EPSG:2180"
+        crs = calc_crs.authid() or "EPSG:2180"
+        if result.n_receivers and all(r.n_sources == 0 for r in result.results):
+            self._log(f"⚠  Żaden receptor nie ma turbiny w promieniu {cfg.max_radius_m:.0f} m – "
+                      f"sprawdź warstwy i ich układy współrzędnych")
         layer = apply_results(result, crs_authid=crs)
         self._log(f"Warstwa: {layer.name()}")
         isolines_json = None
@@ -602,6 +626,7 @@ class NoiseDialog(QDialog):
                 output_dir=out_dir,
                 write_raster=self.chk_raster.isChecked(),
                 write_isolines=self.chk_iso.isChecked(),
+                stamp=stamp, log=self._log,
             )
             if rast: self._log(f"Raster: {rast.name()}")
             if iso: self._log(f"Izolinie: {iso.name()} ({iso.featureCount()})")
@@ -670,7 +695,7 @@ class NoiseDialog(QDialog):
                     ],
                     "paths": paths if paths is not None else _attenuation_table(cfg),
                 }
-                opt_path = os.path.join(out_dir, "noise_paths.json")
+                opt_path = os.path.join(out_dir, f"noise_paths_{stamp}.json")
                 with open(opt_path, "w", encoding="utf-8") as f:
                     json.dump(payload, f, ensure_ascii=False)
                 self._last_meta["optimization_matrix_path"] = opt_path
@@ -706,11 +731,11 @@ class NoiseDialog(QDialog):
         if self._last_meta is not None:
             self._last_meta["project"] = proj
             self._last_meta["project_name"] = proj
-        pdf_path = os.path.join(out_dir, report_filename("HALAS", proj))
+        pdf_path = os.path.join(out_dir, report_filename("HALAS", proj, out_dir=out_dir))
         if hasattr(self, "ed_pdf"):
             self.ed_pdf.setText(pdf_path)
         os.makedirs(os.path.dirname(pdf_path) or ".", exist_ok=True)
-        plots_dir = os.path.join(os.path.dirname(pdf_path), "noise_plots")
+        plots_dir = os.path.join(os.path.dirname(pdf_path), "wykresy_halasu_" + (stamp_of(pdf_path) or "raport"))
         # bez noise_grid – pełna siatka potrafi mieć setki tys. komórek i blokuje worker
         result_dict = self._last_result.to_dict()
         result_dict.pop("noise_grid", None)

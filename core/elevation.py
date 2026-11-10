@@ -115,6 +115,7 @@ class GugikSampler:
         self.src_crs = src_crs
         self.log = log
         self._cache: dict = {}
+        self.missing: list = []          # punkty bez danych (jak DemSampler.missing)
 
     @staticmethod
     def _key(x: float, y: float) -> Tuple[int, int]:
@@ -132,9 +133,19 @@ class GugikSampler:
             n_ok = sum(v is not None for v in z)
             self.log(f"  GUGiK NMT: {n_ok}/{len(todo)} punktów z wysokością ({time.time() - t0:.1f} s)")
 
-    def __call__(self, x: float, y: float) -> float:
+    has_dem = True
+
+    def sample(self, x: float, y: float) -> Optional[float]:
+        """Wysokość albo None (punkt poza zasięgiem danych GUGiK)."""
         k = self._key(x, y)
         if k not in self._cache:
             self.prefetch([(x, y)])
         v = self._cache.get(k)
-        return float(v) if v is not None else 0.0
+        if v is None:
+            self.missing.append((float(x), float(y)))
+            return None
+        return float(v)
+
+    def __call__(self, x: float, y: float) -> float:
+        v = self.sample(x, y)
+        return v if v is not None else 0.0

@@ -706,13 +706,24 @@ class AepDialog(QDialog):
         self.log_box.append(f"CF: {result['capacity_factor_pct']:.1f} %")
         self.log_box.append(f"Wake loss: {result['wake_loss_pct']:.2f} %")
         self.log_box.append(f"CSV: {result.get('csv_path', '')}")
+        ps = result.get("production_stats") or {}
+        if ps.get("iav_pct") is not None:
+            self.log_box.append(f"Zmienność międzyroczna: {ps['iav_pct']:.1f} % ({ps.get('n_full_years')} pełnych lat)")
+        for pv in ps.get("p_values") or []:
+            self.log_box.append(
+                f"  {pv['horizon_years']:>2} lat: P50 {pv['p50_mwh']:.0f} · P75 {pv['p75_mwh']:.0f} · "
+                f"P90 {pv['p90_mwh']:.0f} MWh/rok")
+        for k, p in (result.get("profile_paths") or {}).items():
+            self.log_box.append(f"Profil ({k}): {p}")
         # trwały JSON dla modułu optymalizacji (gdy worker nie zapisał)
         try:
             out_dir = result.get("output_dir") or self.out_edit.text().strip()
             if out_dir:
                 import os, json
                 os.makedirs(out_dir, exist_ok=True)
-                jp = result.get("json_path") or os.path.join(out_dir, "aep_results.json")
+                from WindLab.core.paths import run_stamp as _run_stamp
+                jp = result.get("json_path") or os.path.join(
+                    out_dir, f"aep_results_{result.get('stamp') or _run_stamp(out_dir)}.json")
                 if not os.path.isfile(jp):
                     with open(jp, "w", encoding="utf-8") as f:
                         json.dump(result, f, ensure_ascii=False, indent=2)
@@ -745,7 +756,9 @@ class AepDialog(QDialog):
 
         out_dir = self._last_result.get("output_dir") or self.out_edit.text().strip() or DEFAULT_OUTPUT_DIR
         os.makedirs(out_dir, exist_ok=True)
-        pdf_path = os.path.join(out_dir, report_filename("AEP", proj))
+        pdf_path = os.path.join(out_dir, report_filename("AEP", proj, out_dir=out_dir))
+        from WindLab.core.paths import stamp_of as _stamp_of
+        plots_dir = os.path.join(out_dir, "wykresy_AEP_" + (_stamp_of(pdf_path) or "raport"))
         nc_dir = self.nc_edit.text().strip()
 
         self.log_box.append("Generuję raport PDF...")
@@ -755,7 +768,7 @@ class AepDialog(QDialog):
             env.pop("PYTHONHOME", None)
             env.pop("PYTHONPATH", None)
             proc = rx.run(
-                [PYTHON_EXE, REPORT_GEN, json_path, nc_dir, pdf_path, out_dir],
+                [PYTHON_EXE, REPORT_GEN, json_path, nc_dir, pdf_path, plots_dir],
                 capture_output=True, text=True, env=env, timeout=300,
             )
             if proc.stdout:

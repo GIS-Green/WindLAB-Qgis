@@ -603,7 +603,23 @@ class CableDialog(QDialog):
         return current_output_dir()
 
     def _aep_json_default(self):
-        return os.path.join(self._out_dir(), "aep_results.json")
+        from WindLab.core.paths import latest
+        out = self._out_dir()
+        return latest(out, "aep_results", "json") or os.path.join(out, "aep_results.json")
+
+    def _graph_file(self):
+        """Najnowszy graf kandydatów (cable_graph_<znacznik>.json) z katalogu wyników."""
+        from WindLab.core.paths import latest
+        if self._mst_result and os.path.isfile(str(self._mst_result.get("graph_path") or "")):
+            return self._mst_result["graph_path"]
+        return latest(self._out_dir(), "cable_graph", "json")
+
+    @staticmethod
+    def _aep_npz_for(json_path, data=None):
+        """Plik npz tego samego przebiegu AEP co json (ten sam znacznik czasu)."""
+        cands = [(data or {}).get("npz_path"), os.path.splitext(json_path)[0] + ".npz",
+                 os.path.join(os.path.dirname(json_path), "aep_results.npz")]
+        return next((c for c in cands if c and os.path.isfile(c)), cands[1])
 
     def _project_name(self):
         env = (os.environ.get("WINDLAB_PROJECT_NAME") or "").strip()
@@ -666,7 +682,7 @@ class CableDialog(QDialog):
             with open(path, "r", encoding="utf-8") as f:
                 d = json.load(f)
             has_g = False
-            npz = os.path.join(os.path.dirname(path), "aep_results.npz")
+            npz = self._aep_npz_for(path, d)
             if os.path.isfile(npz):
                 try:
                     import numpy as np
@@ -836,10 +852,12 @@ class CableDialog(QDialog):
 
     def _collect_opt_params(self):
         out_dir = self._out_dir()
-        if not os.path.isfile(os.path.join(out_dir, "cable_graph.json")):
-            raise ValueError("Brak pliku cable_graph.json w katalogu wyjściowym – najpierw policz MST (zakładka 1).")
+        graph_file = self._graph_file()
+        if not graph_file:
+            raise ValueError("Brak pliku cable_graph_*.json w katalogu wyjściowym – najpierw policz MST (zakładka 1).")
         cables = self._get_cables()
         p = {
+            "graph_path": graph_file,
             "output_dir": out_dir, "project_name": self._project_name(),
             "electrical": {"u_kv": self.u_spin.value(), "cos_phi": self.cos_spin.value(), "max_dv_pct": self.dv_spin.value(),
                            "max_loss_pct": self.loss_spin.value(),
@@ -863,7 +881,7 @@ class CableDialog(QDialog):
                 raise ValueError("Nie znaleziono pliku wyników AEP: %s\nWybierz tryb ręczny albo wskaż plik." % path)
             p["power_source"] = "aep"
             p["aep_json_path"] = path
-            p["aep_npz_path"] = os.path.join(os.path.dirname(path), "aep_results.npz")
+            p["aep_npz_path"] = self._aep_npz_for(path)
             p["llf"] = self.llf_spin.value()   # używane tylko, gdy w npz nie ma macierzy G
         else:
             p["power_source"] = "manual"
@@ -1028,11 +1046,11 @@ class CableDialog(QDialog):
     # ── Raport PDF ────────────────────────────────────────────────────────────
     def _on_report(self):
         out_dir = self._out_dir()
-        if not os.path.isfile(os.path.join(out_dir, "cable_graph.json")):
+        if not self._graph_file():
             QMessageBox.warning(self, "Błąd", "Brak wyników w katalogu wyjściowym – najpierw policz MST (zakładka 1).")
             return
         proj = self._project_name()
-        pdf = os.path.join(out_dir, report_filename("KABLE_SN", proj))
+        pdf = os.path.join(out_dir, report_filename("KABLE_SN", proj, out_dir=out_dir))
         self._pdf_path = pdf
         self.log_box.appendPlainText("Generuję raport PDF...")
         self._start(WORKER_REPORT, {"output_dir": out_dir, "output_pdf": pdf, "project_name": proj},

@@ -5,11 +5,12 @@ qgisMaximumVersion=4.99
 supportsQt6=True
 description=Wind farm analyses in QGIS: AEP, wake, shadow flicker, noise (ISO 9613-2), layout optimisation, cable routing and turbine transport (swept path). Calculations run on the WindLab server.
 about=WindLab is a QGIS front-end for wind farm studies. The plugin provides the user interface, map layers and PDF reports; all calculations (AEP and wake, shadow flicker, ISO 9613-2 noise, optimisation, cable routing, Vestas swept path) run on the WindLab calculation server. Project data are sent only for the duration of a calculation and are not stored on the server. Requires an internet connection and a free WindLab activation key (registration: https://windlab.greengis.pl/register). Demo limits: up to 4 turbines per calculation, transport analysis for one site per key.
-version=0.1.7
+version=0.1.8
 author=GreenGIS
 email=kontakt@greengis.pl
 
 changelog=
+    0.1.8 - result files and reports get a date-time stamp in their names (earlier runs are no longer overwritten); AEP: P50/P75/P90 and inter-annual variability, corrected wake loss in per-turbine mode; noise: layers in different coordinate systems are reprojected, limit check on values rounded to 0.1 dB; shadow flicker: warnings about missing terrain data; new projects reference the turbine layer instead of copying it.
     0.1.7 - security: the plugin identifies calculation modules by ID only and no longer receives server file paths or internal error traces.
     0.1.6 - fix: cable routing report and optimisation on the server now receive the earlier MST/graph results from the project Output folder.
     0.1.5 - fix: QGIS closed when a generated PDF report was opened on Windows (reports now open with the default Windows application).
