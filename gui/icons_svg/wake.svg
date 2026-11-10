@@ -1,0 +1,15 @@
+<svg viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <line x1="8" y1="18" x2="8" y2="29" stroke="rgba(255,255,255,0.9)" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="8" cy="17" r="2" fill="rgba(255,255,255,0.9)"/>
+  <line x1="8" y1="17" x2="8" y2="11" stroke="rgba(255,255,255,0.9)" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="8" y1="17" x2="13" y2="20" stroke="rgba(255,255,255,0.9)" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="8" y1="17" x2="3" y2="20" stroke="rgba(255,255,255,0.9)" stroke-width="1.5" stroke-linecap="round"/>
+  <path d="M12,11 Q24,7 33,3" fill="none" stroke="rgba(255,255,255,0.8)" stroke-width="1.2" stroke-dasharray="3,2"/>
+  <path d="M12,17 Q24,17 33,17" fill="none" stroke="rgba(255,255,255,0.55)" stroke-width="1.2" stroke-dasharray="3,2"/>
+  <path d="M12,23 Q24,27 33,31" fill="none" stroke="rgba(255,255,255,0.8)" stroke-width="1.2" stroke-dasharray="3,2"/>
+  <line x1="26" y1="18" x2="26" y2="29" stroke="rgba(255,255,255,0.4)" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="26" cy="17" r="2" fill="rgba(255,255,255,0.4)"/>
+  <line x1="26" y1="17" x2="26" y2="11" stroke="rgba(255,255,255,0.4)" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="26" y1="17" x2="31" y2="20" stroke="rgba(255,255,255,0.4)" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="26" y1="17" x2="21" y2="20" stroke="rgba(255,255,255,0.4)" stroke-width="1.5" stroke-linecap="round"/>
+</svg>

@@ -1,0 +1,10 @@
+<svg viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path d="M4,26 Q10,18 16,16 Q22,14 28,9 Q31,6 33,4" fill="none" stroke="rgba(255,255,255,0.95)" stroke-width="2" stroke-linecap="round"/>
+  <path d="M4,30 Q10,24 16,22 Q22,20 28,16 Q31,13 33,11" fill="none" stroke="rgba(255,255,255,0.65)" stroke-width="1.5" stroke-linecap="round"/>
+  <path d="M4,33 Q11,29 17,27 Q23,25 28,22 Q31,20 33,18" fill="none" stroke="rgba(255,255,255,0.35)" stroke-width="1" stroke-linecap="round"/>
+  <circle cx="19" cy="17" r="8" fill="rgba(255,255,255,0.18)" stroke="rgba(255,255,255,0.5)" stroke-width="1"/>
+  <line x1="19" y1="11" x2="19" y2="20" stroke="rgba(255,255,255,0.9)" stroke-width="2.2" stroke-linecap="round"/>
+  <polyline points="14,17 19,23 24,17" stroke="rgba(255,255,255,0.9)" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="10" y="4" width="12" height="5" rx="2.5" fill="rgba(255,255,255,0.25)" stroke="rgba(255,255,255,0.7)" stroke-width="0.8"/>
+  <text x="16" y="8" text-anchor="middle" font-family="sans-serif" font-size="3.8" fill="#fff" font-weight="700">NMT+NC</text>
+</svg>
